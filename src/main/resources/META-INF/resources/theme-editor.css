@@ -1,0 +1,12 @@
+/*
+ * This file has been created by the Vaadin Theme Editor. Please note that
+ * manual changes to individual CSS properties may be overwritten by the theme editor.
+ */
+vaadin-vertical-layout.main-view-vertical-layout-1 {
+  background-color:rgba(94,94,125,0.99);
+  border-color:rgba(27,19,242,0.87);
+  border-radius:0;
+  border-width:0px;
+  gap:var(--vaadin-gap-xs);
+  padding:var(--vaadin-gap-xs);
+}
