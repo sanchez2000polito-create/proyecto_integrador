@@ -1,2 +1,42 @@
 @import "./theme-editor.css";
 /* Add your styles here */
+
+/* Links styled as buttons for the product exports. */
+.download-button {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--vaadin-button-height, 2.25rem);
+  padding: 0 var(--vaadin-button-padding-inline, 1rem);
+  border: 0;
+  border-radius: var(--vaadin-button-border-radius, 0.5rem);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 120ms ease, box-shadow 120ms ease;
+}
+
+.download-button-pdf {
+  background-color: #c62828;
+}
+
+.download-button-pdf:hover {
+  background-color: #a61f1f;
+}
+
+.download-button-excel {
+  background-color: #188038;
+}
+
+.download-button-excel:hover {
+  background-color: #12682c;
+}
+
+.download-button:focus-visible {
+  outline: 3px solid #1a73e8;
+  outline-offset: 2px;
+}

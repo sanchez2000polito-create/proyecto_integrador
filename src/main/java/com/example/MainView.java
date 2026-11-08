@@ -1,6 +1,14 @@
 package com.example;
 
 import java.time.LocalDateTime;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.awt.Color;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
+import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.List;
 
 import com.example.model.Categoria;
 import com.example.model.DetallesDonaciones;
@@ -20,6 +28,8 @@ import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.formlayout.FormLayout;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.html.H2;
+import com.vaadin.flow.component.html.H3;
+import com.vaadin.flow.component.html.Anchor;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
@@ -27,6 +37,23 @@ import com.vaadin.flow.component.tabs.TabSheet;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
+import com.vaadin.flow.server.StreamResource;
+import jakarta.persistence.Id;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellStyle;
+import org.apache.poi.ss.usermodel.FillPatternType;
+import org.apache.poi.ss.usermodel.HorizontalAlignment;
+import org.apache.poi.ss.usermodel.IndexedColors;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.openpdf.text.Document;
+import org.openpdf.text.PageSize;
+import org.openpdf.text.Paragraph;
+import org.openpdf.text.Phrase;
+import org.openpdf.text.pdf.PdfWriter;
+import org.openpdf.text.pdf.PdfPTable;
+import org.openpdf.text.pdf.PdfPCell;
 
 @PageTitle("Gestión CRUD - Sistema de Inventario")
 @Route("")
@@ -74,10 +101,32 @@ public class MainView extends VerticalLayout {
         TextField idCategoriaField = new TextField("ID de categoría");
         TextField idFundacionField = new TextField("ID de fundación");
 
-        FormLayout form = new FormLayout(
-            idField, codigoField, nombreField, categoriaField, precioField, stockField,
-            estadoField, idCategoriaField, idFundacionField
+        FormLayout datosProducto = new FormLayout(idField, codigoField, nombreField, categoriaField, estadoField);
+        datosProducto.setResponsiveSteps(
+            new FormLayout.ResponsiveStep("0", 1),
+            new FormLayout.ResponsiveStep("650px", 2)
         );
+
+        FormLayout inventario = new FormLayout(precioField, stockField);
+        inventario.setResponsiveSteps(
+            new FormLayout.ResponsiveStep("0", 1),
+            new FormLayout.ResponsiveStep("650px", 2)
+        );
+
+        FormLayout relaciones = new FormLayout(idCategoriaField, idFundacionField);
+        relaciones.setResponsiveSteps(
+            new FormLayout.ResponsiveStep("0", 1),
+            new FormLayout.ResponsiveStep("650px", 2)
+        );
+
+        VerticalLayout form = new VerticalLayout(
+            new H3("Información del producto"), datosProducto,
+            new H3("Inventario"), inventario,
+            new H3("Relaciones"), relaciones
+        );
+        form.setWidthFull();
+        form.setPadding(false);
+        form.setSpacing(false);
 
         Grid<Producto> grid = new Grid<>(Producto.class, false);
         grid.addColumn(Producto::getId).setHeader("ID").setAutoWidth(true);
@@ -173,8 +222,194 @@ public class MainView extends VerticalLayout {
             grid.asSingleSelect().clear();
         });
 
-        layout.add(form, crearAcciones(btnCrear, btnConsultar, btnActualizar, btnEliminar, btnLimpiar), grid);
+        Anchor descargarPdf = crearDescarga("productos.pdf", "Descargar PDF", this::generarPdfProductos);
+        Anchor descargarExcel = crearDescarga("productos.xlsx", "Descargar Excel", this::generarExcelProductos);
+        layout.add(
+            form,
+            crearAcciones(btnCrear, btnConsultar, btnActualizar, btnEliminar, btnLimpiar, descargarPdf, descargarExcel),
+            grid
+        );
         return layout;
+    }
+
+    private Anchor crearDescarga(String nombre, String texto, Exportador exportador) {
+        StreamResource recurso = new StreamResource(nombre, () -> new ByteArrayInputStream(exportador.exportar()));
+        Anchor enlace = new Anchor(recurso, texto);
+        enlace.getElement().setAttribute("download", true);
+        enlace.getElement().getThemeList().add("button");
+        enlace.addClassName("download-button");
+        enlace.addClassName(nombre.endsWith(".pdf") ? "download-button-pdf" : "download-button-excel");
+        return enlace;
+    }
+
+    private HorizontalLayout crearAccionesExportables(Class<?> entidad, String nombreArchivo, Button... botones) {
+        Component[] componentes = new Component[botones.length + 2];
+        System.arraycopy(botones, 0, componentes, 0, botones.length);
+        componentes[botones.length] = crearDescarga(
+            nombreArchivo + ".pdf", "Descargar PDF", () -> generarPdf(entidad, nombreArchivo)
+        );
+        componentes[botones.length + 1] = crearDescarga(
+            nombreArchivo + ".xlsx", "Descargar Excel", () -> generarExcel(entidad, nombreArchivo)
+        );
+        return crearAcciones(componentes);
+    }
+
+    private Field[] camposExportables(Class<?> entidad) {
+        Field[] campos = Arrays.stream(entidad.getDeclaredFields())
+            .filter(campo -> !Modifier.isStatic(campo.getModifiers()) && !campo.isSynthetic())
+            .toArray(Field[]::new);
+        Arrays.sort(campos, (primero, segundo) -> Boolean.compare(
+            segundo.isAnnotationPresent(Id.class), primero.isAnnotationPresent(Id.class)
+        ));
+        return campos;
+    }
+
+    private List<Object> registrosOrdenados(Class<?> entidad, Field[] campos) {
+        List<Object> registros = new ArrayList<>(crudService.listarTodos(entidad));
+        Field campoId = Arrays.stream(campos).filter(campo -> campo.isAnnotationPresent(Id.class)).findFirst().orElse(null);
+        if (campoId != null) {
+            campoId.setAccessible(true);
+            registros.sort((primero, segundo) -> {
+                try {
+                    Object valorPrimero = campoId.get(primero);
+                    Object valorSegundo = campoId.get(segundo);
+                    if (valorPrimero instanceof Number numeroPrimero && valorSegundo instanceof Number numeroSegundo) {
+                        return Double.compare(numeroPrimero.doubleValue(), numeroSegundo.doubleValue());
+                    }
+                    return String.valueOf(valorPrimero).compareToIgnoreCase(String.valueOf(valorSegundo));
+                } catch (IllegalAccessException e) {
+                    throw new IllegalStateException("No se pudo ordenar por identificador", e);
+                }
+            });
+        }
+        return registros;
+    }
+
+    private String nombreColumna(String nombre) {
+        String conEspacios = nombre.replaceAll("([a-z])([A-Z])", "$1 $2").replace('_', ' ');
+        return conEspacios.substring(0, 1).toUpperCase() + conEspacios.substring(1);
+    }
+
+    private byte[] generarPdf(Class<?> entidad, String nombre) {
+        try {
+            Field[] campos = camposExportables(entidad);
+            ByteArrayOutputStream salida = new ByteArrayOutputStream();
+            Document documento = new Document();
+            documento.setPageSize(PageSize.LETTER.rotate());
+            documento.setMargins(28, 28, 30, 30);
+            PdfWriter.getInstance(documento, salida);
+            documento.open();
+            org.openpdf.text.Font fuenteTitulo = new org.openpdf.text.Font(
+                org.openpdf.text.Font.HELVETICA, 18, org.openpdf.text.Font.BOLD, new Color(31, 78, 121)
+            );
+            Paragraph titulo = new Paragraph("Reporte de " + nombre.replace('-', ' '), fuenteTitulo);
+            titulo.setSpacingAfter(14);
+            documento.add(titulo);
+            PdfPTable tabla = new PdfPTable(Math.max(1, campos.length));
+            tabla.setWidthPercentage(100);
+            tabla.setHeaderRows(1);
+            tabla.setSplitRows(true);
+            org.openpdf.text.Font fuenteEncabezado = new org.openpdf.text.Font(
+                org.openpdf.text.Font.HELVETICA, 9, org.openpdf.text.Font.BOLD, Color.WHITE
+            );
+            for (Field campo : campos) {
+                PdfPCell celda = new PdfPCell(new Phrase(nombreColumna(campo.getName()), fuenteEncabezado));
+                celda.setBackgroundColor(new Color(31, 78, 121));
+                celda.setPadding(7);
+                tabla.addCell(celda);
+            }
+            org.openpdf.text.Font fuenteDato = new org.openpdf.text.Font(org.openpdf.text.Font.HELVETICA, 8);
+            int numeroFila = 0;
+            for (Object registro : registrosOrdenados(entidad, campos)) {
+                for (Field campo : campos) {
+                    campo.setAccessible(true);
+                    Object valor = campo.get(registro);
+                    PdfPCell celda = new PdfPCell(new Phrase(valor == null ? "" : valor.toString(), fuenteDato));
+                    celda.setPadding(6);
+                    if (numeroFila % 2 == 1) {
+                        celda.setBackgroundColor(new Color(238, 243, 248));
+                    }
+                    tabla.addCell(celda);
+                }
+                numeroFila++;
+            }
+            documento.add(tabla);
+            documento.close();
+            return salida.toByteArray();
+        } catch (Exception e) {
+            throw new IllegalStateException("No se pudo generar el PDF de " + nombre, e);
+        }
+    }
+
+    private byte[] generarExcel(Class<?> entidad, String nombre) {
+        try (XSSFWorkbook libro = new XSSFWorkbook(); ByteArrayOutputStream salida = new ByteArrayOutputStream()) {
+            Field[] campos = camposExportables(entidad);
+            libro.getProperties().getCoreProperties().setTitle("Reporte de " + nombre.replace('-', ' '));
+            Sheet hoja = libro.createSheet(nombre.length() > 31 ? nombre.substring(0, 31) : nombre);
+            Row encabezado = hoja.createRow(0);
+            CellStyle estiloEncabezado = libro.createCellStyle();
+            estiloEncabezado.setFillForegroundColor(IndexedColors.DARK_BLUE.getIndex());
+            estiloEncabezado.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+            estiloEncabezado.setAlignment(HorizontalAlignment.CENTER);
+            org.apache.poi.ss.usermodel.Font fuenteEncabezado = libro.createFont();
+            fuenteEncabezado.setBold(true);
+            fuenteEncabezado.setColor(IndexedColors.WHITE.getIndex());
+            estiloEncabezado.setFont(fuenteEncabezado);
+
+            CellStyle estiloFilaAlterna = libro.createCellStyle();
+            estiloFilaAlterna.setFillForegroundColor(IndexedColors.GREY_25_PERCENT.getIndex());
+            estiloFilaAlterna.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+            for (int i = 0; i < campos.length; i++) {
+                Cell celda = encabezado.createCell(i);
+                celda.setCellValue(nombreColumna(campos[i].getName()));
+                celda.setCellStyle(estiloEncabezado);
+            }
+            int numeroFila = 1;
+            for (Object registro : registrosOrdenados(entidad, campos)) {
+                Row fila = hoja.createRow(numeroFila++);
+                for (int i = 0; i < campos.length; i++) {
+                    campos[i].setAccessible(true);
+                    Object valor = campos[i].get(registro);
+                    Cell celda = fila.createCell(i);
+                    if (valor instanceof Number numero) {
+                        celda.setCellValue(numero.doubleValue());
+                    } else if (valor instanceof Boolean booleano) {
+                        celda.setCellValue(booleano);
+                    } else {
+                        celda.setCellValue(valor == null ? "" : valor.toString());
+                    }
+                    if (numeroFila % 2 == 0) {
+                        celda.setCellStyle(estiloFilaAlterna);
+                    }
+                }
+            }
+            for (int i = 0; i < campos.length; i++) {
+                hoja.autoSizeColumn(i);
+                hoja.setColumnWidth(i, Math.min(40 * 256, Math.max(14 * 256, hoja.getColumnWidth(i))));
+            }
+            if (campos.length > 0) {
+                hoja.setAutoFilter(new org.apache.poi.ss.util.CellRangeAddress(0, Math.max(0, numeroFila - 1), 0, campos.length - 1));
+            }
+            hoja.createFreezePane(0, 1);
+            hoja.setZoom(90);
+            libro.write(salida);
+            return salida.toByteArray();
+        } catch (Exception e) {
+            throw new IllegalStateException("No se pudo generar el Excel de " + nombre, e);
+        }
+    }
+
+    private byte[] generarPdfProductos() {
+        return generarPdf(Producto.class, "productos");
+    }
+
+    private byte[] generarExcelProductos() {
+        return generarExcel(Producto.class, "productos");
+    }
+
+    @FunctionalInterface
+    private interface Exportador {
+        byte[] exportar();
     }
 
     // ==========================================
@@ -254,7 +489,7 @@ public class MainView extends VerticalLayout {
             grid.asSingleSelect().clear();
         });
 
-        layout.add(form, crearAcciones(btnCrear, btnConsultar, btnActualizar, btnEliminar, btnLimpiar), grid);
+        layout.add(form, crearAccionesExportables(Categoria.class, "categorias", btnCrear, btnConsultar, btnActualizar, btnEliminar, btnLimpiar), grid);
         return layout;
     }
 
@@ -349,7 +584,7 @@ public class MainView extends VerticalLayout {
             grid.asSingleSelect().clear();
         });
 
-        layout.add(form, crearAcciones(btnCrear, btnConsultar, btnActualizar, btnEliminar, btnLimpiar), grid);
+        layout.add(form, crearAccionesExportables(Proveedor.class, "proveedores", btnCrear, btnConsultar, btnActualizar, btnEliminar, btnLimpiar), grid);
         return layout;
     }
 
@@ -466,7 +701,7 @@ public class MainView extends VerticalLayout {
             grid.asSingleSelect().clear();
         });
 
-        layout.add(form, crearAcciones(btnCrear, btnConsultar, btnActualizar, btnEliminar, btnLimpiar), grid);
+        layout.add(form, crearAccionesExportables(Usuario.class, "usuarios", btnCrear, btnConsultar, btnActualizar, btnEliminar, btnLimpiar), grid);
         return layout;
     }
 
@@ -564,7 +799,7 @@ public class MainView extends VerticalLayout {
             grid.asSingleSelect().clear();
         });
 
-        layout.add(form, crearAcciones(btnCrear, btnConsultar, btnActualizar, btnEliminar, btnLimpiar), grid);
+        layout.add(form, crearAccionesExportables(Fundacion.class, "fundaciones", btnCrear, btnConsultar, btnActualizar, btnEliminar, btnLimpiar), grid);
         return layout;
     }
 
@@ -645,7 +880,7 @@ public class MainView extends VerticalLayout {
             grid.asSingleSelect().clear();
         });
 
-        layout.add(form, crearAcciones(btnCrear, btnConsultar, btnActualizar, btnEliminar, btnLimpiar), grid);
+        layout.add(form, crearAccionesExportables(Rol.class, "roles", btnCrear, btnConsultar, btnActualizar, btnEliminar, btnLimpiar), grid);
         return layout;
     }
 
@@ -744,7 +979,7 @@ public class MainView extends VerticalLayout {
             limpiar(idField, idUsuarioField, nombreField, ciudadField);
             grid.asSingleSelect().clear();
         });
-        layout.add(form, crearAcciones(btnCrear, btnConsultar, btnActualizar, btnEliminar, btnLimpiar), grid);
+        layout.add(form, crearAccionesExportables(Tiendas.class, "tiendas", btnCrear, btnConsultar, btnActualizar, btnEliminar, btnLimpiar), grid);
         return layout;
     }
 
@@ -857,7 +1092,7 @@ public class MainView extends VerticalLayout {
             limpiar(idField, idUsuarioField, fechaField, estadoField, metodoPagoField, direccionField);
             grid.asSingleSelect().clear();
         });
-        layout.add(form, crearAcciones(btnCrear, btnConsultar, btnActualizar, btnEliminar, btnLimpiar), grid);
+        layout.add(form, crearAccionesExportables(Pedido.class, "pedidos", btnCrear, btnConsultar, btnActualizar, btnEliminar, btnLimpiar), grid);
         return layout;
     }
 
@@ -965,7 +1200,7 @@ public class MainView extends VerticalLayout {
             limpiar(idField, idPedidoField, idProductoField, cantidadField, precioUnitarioField);
             grid.asSingleSelect().clear();
         });
-        layout.add(form, crearAcciones(btnCrear, btnConsultar, btnActualizar, btnEliminar, btnLimpiar), grid);
+        layout.add(form, crearAccionesExportables(DetallesPedidos.class, "detalles-pedidos", btnCrear, btnConsultar, btnActualizar, btnEliminar, btnLimpiar), grid);
         return layout;
     }
 
@@ -1066,7 +1301,7 @@ public class MainView extends VerticalLayout {
             limpiar(idField, idDonacionField, idProductoField, cantidadField);
             grid.asSingleSelect().clear();
         });
-        layout.add(form, crearAcciones(btnCrear, btnConsultar, btnActualizar, btnEliminar, btnLimpiar), grid);
+        layout.add(form, crearAccionesExportables(DetallesDonaciones.class, "detalles-donaciones", btnCrear, btnConsultar, btnActualizar, btnEliminar, btnLimpiar), grid);
         return layout;
     }
 
@@ -1140,7 +1375,7 @@ public class MainView extends VerticalLayout {
             grid.asSingleSelect().clear();
         });
 
-        layout.add(form, crearAcciones(btnCrear, btnConsultar, btnActualizar, btnEliminar, btnLimpiar), grid);
+        layout.add(form, crearAccionesExportables(UsuarioRol.class, "usuarios-roles", btnCrear, btnConsultar, btnActualizar, btnEliminar, btnLimpiar), grid);
         return layout;
     }
 
@@ -1177,8 +1412,8 @@ public class MainView extends VerticalLayout {
         }
     }
 
-    private HorizontalLayout crearAcciones(Button... botones) {
-        HorizontalLayout layout = new HorizontalLayout(botones);
+    private HorizontalLayout crearAcciones(Component... componentes) {
+        HorizontalLayout layout = new HorizontalLayout(componentes);
         layout.getStyle().set("flex-wrap", "wrap");
         return layout;
     }

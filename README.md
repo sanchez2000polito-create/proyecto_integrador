@@ -1,34 +1,39 @@
-# My Application README
+INSUCLICK — Proyecto Integrador B1 2026-2
+Descripción del proyecto
+INSUCLICK es una aplicación web orientada a la gestión de productos y compras, que busca facilitar la interacción entre usuarios, vendedores y fundaciones. El proyecto se desarrolla como parte del Proyecto Integrador del programa de programación.
 
-- [ ] TODO Replace or update this README with instructions relevant to your application
+Modelo entidad-relación
+El modelo entidad-relación representa las entidades principales del sistema y las relaciones entre sus tablas.
 
-To start the application in development mode, import it into your IDE and run the `Application` class. 
-You can also start the application from the command line by running: 
+Diagrama del modelo entidad-relación:
 
-```bash
-./mvnw
-```
+Diagrama entidad-relación de INSUCLICK
+c:\Users\sanch\Downloads\insuclick-mer.png
 
-To build the application in production mode, run:
 
-```bash
-./mvnw package
-```
+Tecnologías utilizadas
+Lenguaje: Java.
+Interfaz web: Vaadin.
+Gestión del proyecto: Git y GitHub.
+Base de datos prevista: PostgreSQL.
+Estructura del proyecto
+src/main/java/com/example/: contiene las clases principales de la aplicación.
+model/: contiene las clases que representan las entidades del sistema.
+MainView.java: contiene la interfaz principal de la aplicación.
+Application.java: contiene el punto de entrada de la aplicación.
+src/main/resources/: contiene los recursos de la aplicación.
+Ejecución del proyecto
+Para ejecutar la aplicación en Windows, abre una terminal en la carpeta raíz del proyecto y ejecuta:
 
-To build a Docker image, run:
+.\mvnw.cmd
+Para compilar el proyecto:
 
-```bash
-docker build -t my-application:latest .
-```
+.\mvnw.cmd clean compile
+Estado del proyecto
+El proyecto se encuentra en desarrollo académico. Su estructura y funcionalidades se irán ampliando progresivamente de acuerdo con los temas vistos en clase.
 
-If you use commercial components, pass the license key as a build secret:
+Equipo de trabajo
+Proyecto Integrador B1 — 2026-2.
 
-```bash
-docker build --secret id=proKey,src=$HOME/.vaadin/proKey .
-```
-
-## Getting Started
-
-The [Quick Start](https://vaadin.com/docs/v25/getting-started/quick-start) tutorial helps you get started with Vaadin in 
-around 10 minutes. This tutorial walks you through building a simple application, introducing the core concepts along 
-the way.
+Licencia
+Consultar el archivo LICENSE.md incluido en es repositorio.

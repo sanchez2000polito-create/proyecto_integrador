@@ -2,8 +2,15 @@
  * This file has been created by the Vaadin Theme Editor. Please note that
  * manual changes to individual CSS properties may be overwritten by the theme editor.
  */
+html.main-view-vertical-layout-1 {
+  --aura-background-color-dark:#000000;
+  --aura-background-color-light:#ffffff;
+  --aura-content-color-scheme:light;
+  --aura-notification-color-scheme:dark;
+  color-scheme:dark;
+}
+
 vaadin-vertical-layout.main-view-vertical-layout-1 {
-  background-color:rgba(94,94,125,0.99);
   border-color:rgba(27,19,242,0.87);
   border-radius:0;
   border-width:0px;
